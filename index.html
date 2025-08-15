@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Number System Converter</title>
+<style>
+  :root{
+    --bg:#f2f2f2; --card:#ffffff; --accent:#34a853;
+    --muted:#666; --panel:#eef0ff; --code:#e3e3e3;
+    --border:#d6d6d6; --errbg:#ffe8e8; --errbd:#ffb4b4; --err:#a40000;
+  }
+  body{font-family:system-ui,Arial,sans-serif;background:var(--bg);margin:0;padding:24px}
+  .card{max-width:860px;margin:auto;background:var(--card);padding:28px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.08)}
+  h1,h2,h3,h4,p{margin:0}
+  label{font-weight:700;margin-top:14px;display:block}
+  select,input,button{width:100%;padding:12px;border-radius:8px;border:1px solid var(--border);font-size:16px}
+  button{background:var(--accent);color:#fff;border:none;margin-top:12px}
+  button:hover{filter:brightness(.95);cursor:pointer}
+  .output{background:var(--panel);border-radius:10px;padding:16px;margin-top:18px}
+  .title{font-weight:800;margin:0 0 6px}
+  pre{background:var(--code);border-radius:8px;padding:12px;white-space:pre-wrap}
+  .error{background:var(--errbg);border:1px solid var(--errbd);color:var(--err);padding:10px;border-radius:8px;margin-top:10px;display:none}
+  .muted{color:var(--muted)}
+  hr{margin:10px 0;border:none;border-top:1px solid #ccc}
+  .header{text-align:center; line-height:1.6; margin-bottom:20px}
+  .header h2{font-size:24px; font-weight:700}
+  .header h3{font-size:20px; font-weight:500}
+  .header h4{font-size:18px; font-weight:500}
+  .header .designer{margin:5px 0; font-size:14px}
+  .header .title{font-size:18px}
+  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .5px}
+</style>
+</head>
+<body>
+  <div class="card">
+
+    <!-- University-style header -->
+    <div class="header">
+      <h2>Northern Technical University</h2>
+      <h3>Technical Engineering College</h3>
+      <h4>Chemical and Petroleum Industries Technologies Engineering</h4>
+<p class="designer"><strong>Designed by: Azam Isam and Hiba Abdulkareem</strong></p>
+      <hr>
+      <h3 class="title">Number System Converter</h3>
+    </div>
+
+    <label for="conversion">Select Conversion Type:</label>
+    <select id="conversion">
+      <option value="decToBin">Decimal → Binary</option>
+      <option value="binToDec">Binary → Decimal</option>
+      <option value="decToOct">Decimal → Octal</option>
+      <option value="octToDec">Octal → Decimal</option>
+      <option value="decToHex">Decimal → Hexadecimal</option>
+      <option value="hexToDec">Hexadecimal → Decimal</option>
+      <option value="binToOct">Binary → Octal</option>
+      <option value="octToBin">Octal → Binary</option>
+      <option value="binToHex">Binary → Hexadecimal</option>
+      <option value="hexToBin">Hexadecimal → Binary</option>
+      <option value="octToHex">Octal → Hexadecimal</option>
+      <option value="hexToOct">Hexadecimal → Octal</option>
+    </select>
+
+    <label for="inputNumber">Enter Number:</label>
+    <input id="inputNumber" placeholder="e.g., 40 or 1011 or 2F" />
+
+    <button id="convertBtn">Convert</button>
+
+    <div id="error" class="error"></div>
+
+    <div class="output">
+      <p class="title">Result:</p>
+      <p id="result" class="muted mono">—</p>
+      <p class="title">Steps:</p>
+      <pre id="steps" class="muted mono">—</pre>
+      <p class="title">Rule:</p>
+      <p id="rule" class="muted">—</p>
+    </div>
+  </div>
+
+<script>
+const rules = {
+  decToBin: "Rule: Divide the decimal number by 2 repeatedly, record the remainders, then read them from last to first.",
+  binToDec: "Rule: Multiply each binary digit by 2^n (starting from n=0 on the right) and sum the results.",
+  decToOct: "Rule: Divide the decimal number by 8 repeatedly, record the remainders, then read them from last to first.",
+  octToDec: "Rule: Multiply each octal digit by 8^n (starting from n=0 on the right) and sum the results.",
+  decToHex: "Rule: Divide the decimal number by 16 repeatedly, record the remainders (replace 10–15 with A–F), then read them from last to first.",
+  hexToDec: "Rule: Multiply each hexadecimal digit by 16^n (starting from n=0 on the right) and sum the results, replacing A–F with 10–15 first.",
+  binToOct: "Rule: Group binary digits into sets of 3 bits from right to left. If the leftmost group has fewer than 3 bits, pad with zeros on the left.",
+  octToBin: "Rule: Replace each octal digit with its 3-bit binary equivalent.",
+  binToHex: "Rule: Group binary digits into sets of 4 bits from right to left. If the leftmost group has fewer than 4 bits, pad with zeros on the left.",
+  hexToBin: "Rule: Replace each hexadecimal digit with its 4-bit binary equivalent.",
+  octToHex: "Rule: Convert octal to binary (3 bits per digit), group into 4-bit chunks, then convert to hexadecimal.",
+  hexToOct: "Rule: Convert hexadecimal to binary (4 bits per digit), group into 3-bit chunks, then convert to octal."
+};
+
+const el = (id)=>document.getElementById(id);
+const show = (id, txt)=>{ el(id).textContent = txt; el(id).classList.remove('muted'); };
+const clearOutputs = ()=>{
+  show("result","—"); show("steps","—"); show("rule","—");
+  el("error").style.display="none";
+};
+
+// validators
+const isValid = {
+  dec: s => /^\d+$/.test(s),
+  bin: s => /^[01]+$/.test(s),
+  oct: s => /^[0-7]+$/.test(s),
+  hex: s => /^[0-9a-fA-F]+$/.test(s),
+};
+const expected = {
+  decToBin: "dec", decToOct: "dec", decToHex: "dec",
+  binToDec: "bin", binToOct: "bin", binToHex: "bin",
+  octToDec: "oct", octToBin: "oct", octToHex: "oct",
+  hexToDec: "hex", hexToBin: "hex", hexToOct: "hex"
+};
+
+// helper to show spaced groups
+function groupLeft(str, size){
+  if(!str) return "";
+  const out = [];
+  for(let i=0;i<str.length;i+=size){ out.push(str.slice(i,i+size)); }
+  return out.join(" ");
+}
+function groupRight(str, size){
+  const padded = str.padStart(Math.ceil(str.length/size)*size,"0");
+  const out = [];
+  for(let i=0;i<padded.length;i+=size){ out.push(padded.slice(i,i+size)); }
+  return { padded, groups: out.join(" ") };
+}
+
+function convert(){
+  clearOutputs();
+  const type = el("conversion").value;
+  const raw = el("inputNumber").value.trim();
+
+  if(!raw){
+    el("error").textContent = "Please enter a number.";
+    el("error").style.display="block";
+    return;
+  }
+  if(!isValid[ expected[type] ](raw)){
+    el("error").textContent = "Input does not match the expected base for this conversion.";
+    el("error").style.display="block";
+    return;
+  }
+
+  let steps = "", result = "";
+
+  switch(type){
+    case "decToBin": {
+      let n = parseInt(raw,10);
+      if(n === 0){ steps = "0 → 0"; result="0"; break; }
+      while(n > 0){
+        const q = Math.floor(n/2), r = n%2;
+        steps += `${n} ÷ 2 = ${q} remainder ${r}\n`;
+        result = r + result; n = q;
+      }
+      steps += `\nGrouped (4-bit): ${groupRight(result,4).groups}`;
+      break;
+    }
+    case "binToDec": {
+      const arr = raw.split("").reverse(); let sum = 0;
+      arr.forEach((d,i)=>{ const v=(+d)*(2**i); steps += `${d} × 2^${i} = ${v}\n`; sum+=v; });
+      steps += `\nBinary (grouped 4-bit): ${groupRight(raw,4).groups}`;
+      steps += `\nSum = ${sum}`; result=String(sum); break;
+    }
+    case "decToOct": {
+      let n = parseInt(raw,10);
+      if(n === 0){ steps = "0 → 0"; result="0"; break; }
+      while(n > 0){
+        const q = Math.floor(n/8), r = n%8;
+        steps += `${n} ÷ 8 = ${q} remainder ${r}\n`;
+        result = r + result; n = q;
+      }
+      steps += `\nBinary bridge idea: ${groupRight(parseInt(result,8).toString(2),3).groups}`;
+      break;
+    }
+    case "octToDec": {
+      const arr = raw.split("").reverse(); let sum = 0;
+      arr.forEach((d,i)=>{ const v=parseInt(d,10)*(8**i); steps += `${d} × 8^${i} = ${v}\n`; sum+=v; });
+      steps += `\nOctal digits: ${raw.split("").join(" ")}`;
+      steps += `\nSum = ${sum}`; result=String(sum); break;
+    }
+    case "decToHex": {
+      let n = parseInt(raw,10);
+      if(n === 0){ steps = "0 → 0"; result="0"; break; }
+      while(n > 0){
+        const q = Math.floor(n/16), r = n%16;
+        const dig = r<10 ? String(r) : String.fromCharCode(55+r);
+        steps += `${n} ÷ 16 = ${q} remainder ${dig}\n`;
+        result = dig + result; n = q;
+      }
+      steps += `\nBinary bridge idea (4-bit): ${groupRight(parseInt(result,16).toString(2),4).groups}`;
+      break;
+    }
+    case "hexToDec": {
+      const HEX = raw.toUpperCase();
+      const arr = HEX.split("").reverse(); let sum=0;
+      steps += `Hex digits: ${HEX.split("").join(" ")}\n`;
+      arr.forEach((d,i)=>{ const v=parseInt(d,16)*(16**i); steps += `${d} × 16^${i} = ${v}\n`; sum+=v; });
+      steps += `\nSum = ${sum}`; result=String(sum); break;
+    }
+    case "binToOct": {
+      const {padded, groups} = groupRight(raw,3);
+      steps += `Pad to multiple of 3 bits: ${padded}\n`;
+      steps += `Group into 3-bit chunks: ${groups}\n`;
+      const chunks = padded.match(/\d{3}/g) || []; let out="";
+      chunks.forEach(c=>{ const d=parseInt(c,2).toString(8); steps += `${c} → ${d}\n`; out+=d; });
+      result = out || "0"; break;   // keep full octal; no trimming of leading 0 here
+    }
+    case "octToBin": {
+      steps += `Replace each octal digit with 3-bit binary:\n`; let out="";
+      raw.split("").forEach(d=>{ const b=parseInt(d,8).toString(2).padStart(3,"0"); steps += `${d} → ${b}\n`; out+=b; });
+      steps += `\nGrouped (3-bit): ${groupLeft(out,3)}`;
+      result = out;                 // << keep FULL padded binary
+      break;
+    }
+    case "binToHex": {
+      const {padded, groups} = groupRight(raw,4);
+      steps += `Pad to multiple of 4 bits: ${padded}\n`;
+      steps += `Group into 4-bit chunks: ${groups}\n`;
+      const chunks = padded.match(/\d{4}/g) || []; let out="";
+      chunks.forEach(c=>{ const d=parseInt(c,2).toString(16).toUpperCase(); steps += `${c} → ${d}\n`; out+=d; });
+      result = out || "0"; break;   // keep full hex (no trimming)
+    }
+    case "hexToBin": {
+      steps += `Replace each hex digit with 4-bit binary:\n`; let out="";
+      raw.toUpperCase().split("").forEach(d=>{ const b=parseInt(d,16).toString(2).padStart(4,"0"); steps += `${d} → ${b}\n`; out+=b; });
+      steps += `\nGrouped (4-bit): ${groupLeft(out,4)}`;
+      result = out;                 // << keep FULL padded binary
+      break;
+    }
+    case "octToHex": {
+      steps += `Octal to binary (3 bits each):\n`; let bin="";
+      raw.split("").forEach(d=>{ const b=parseInt(d,8).toString(2).padStart(3,"0"); steps += `${d} → ${b}\n`; bin+=b; });
+      steps += `Grouped (3-bit): ${groupLeft(bin,3)}\n`;
+      const {padded, groups} = groupRight(bin,4);
+      steps += `Pad to multiple of 4 bits: ${padded}\n`;
+      steps += `Group into 4-bit chunks: ${groups}\n`;
+      const chunks = padded.match(/\d{4}/g) || []; let hex="";
+      chunks.forEach(c=>{ const h=parseInt(c,2).toString(16).toUpperCase(); steps += `${c} → ${h}\n`; hex+=h; });
+      result = hex || "0"; break;   // keep full hex
+    }
+    case "hexToOct": {
+      steps += `Hex to binary (4 bits each):\n`; let bin="";
+      raw.toUpperCase().split("").forEach(d=>{ const b=parseInt(d,16).toString(2).padStart(4,"0"); steps += `${d} → ${b}\n`; bin+=b; });
+      steps += `Grouped (4-bit): ${groupLeft(bin,4)}\n`;
+      const {padded, groups} = groupRight(bin,3);
+      steps += `Pad to multiple of 3 bits: ${padded}\n`;
+      steps += `Group into 3-bit chunks: ${groups}\n`;
+      const chunks = padded.match(/\d{3}/g) || []; let oct="";
+      chunks.forEach(c=>{ const o=parseInt(c,2).toString(8); steps += `${c} → ${o}\n`; oct+=o; });
+      result = oct || "0"; break;   // keep full octal
+    }
+  }
+
+  show("result", result);
+  show("steps", steps);
+  show("rule", rules[type]);
+}
+
+document.addEventListener("DOMContentLoaded", ()=>{
+  document.getElementById("convertBtn").addEventListener("click", convert);
+});
+</script>
+</body>
+</html>
