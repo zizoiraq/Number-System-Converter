@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Number System Converter</title>
+<title>Number System Converter (with Fractions + Section Lines)</title>
 <style>
   :root{
     --bg:#f2f2f2; --card:#ffffff; --accent:#34a853;
@@ -40,7 +40,7 @@
       <h2>Northern Technical University</h2>
       <h3>Technical Engineering College - Mosul </h3>
       <h4>Chemical and Petroleum Industries Technologies Engineering</h4>
-<p class="designer"><strong>Designed by: Azam Isam and Hiba Abdulkareem</strong></p>
+      <p class="designer"><strong>Designed by: Azam Isam and Hiba Abdulkareem</strong></p>
       <hr>
       <h3 class="title">Number System Converter</h3>
     </div>
@@ -62,7 +62,7 @@
     </select>
 
     <label for="inputNumber">Enter Number:</label>
-    <input id="inputNumber" placeholder="e.g., 40 or 1011 or 2F" />
+    <input id="inputNumber" placeholder="e.g., 40 or 1011 or 2F or 12.5 or 1101.01 or A.F" />
 
     <button id="convertBtn">Convert</button>
 
@@ -79,34 +79,37 @@
   </div>
 
 <script>
+/* ===== CONFIG ===== */
+const MAX_FRAC_DIGITS = 20; // cap for fractional expansion
+const LINE = (label) => `\n──────── ${label} ────────\n`; // visual divider
+
+/* ===== RULES TEXT ===== */
 const rules = {
-  decToBin: "Rule: Divide the decimal number by 2 repeatedly, record the remainders, then read them from last to first.",
-  binToDec: "Rule: Multiply each binary digit by 2^n (starting from n=0 on the right) and sum the results.",
-  decToOct: "Rule: Divide the decimal number by 8 repeatedly, record the remainders, then read them from last to first.",
-  octToDec: "Rule: Multiply each octal digit by 8^n (starting from n=0 on the right) and sum the results.",
-  decToHex: "Rule: Divide the decimal number by 16 repeatedly, record the remainders (replace 10–15 with A–F), then read them from last to first.",
-  hexToDec: "Rule: Multiply each hexadecimal digit by 16^n (starting from n=0 on the right) and sum the results, replacing A–F with 10–15 first.",
-  binToOct: "Rule: Group binary digits into sets of 3 bits from right to left. If the leftmost group has fewer than 3 bits, pad with zeros on the left.",
-  octToBin: "Rule: Replace each octal digit with its 3-bit binary equivalent.",
-  binToHex: "Rule: Group binary digits into sets of 4 bits from right to left. If the leftmost group has fewer than 4 bits, pad with zeros on the left.",
-  hexToBin: "Rule: Replace each hexadecimal digit with its 4-bit binary equivalent.",
-  octToHex: "Rule: Convert octal to binary (3 bits per digit), group into 4-bit chunks, then convert to hexadecimal.",
-  hexToOct: "Rule: Convert hexadecimal to binary (4 bits per digit), group into 3-bit chunks, then convert to octal."
+  decToBin: "Integer: repeated ÷2 with remainders. Fraction: repeatedly ×2; each integer part becomes the next bit after the point.",
+  binToDec: "Integer: sum d×2^n. Fraction: sum d×2^-n (n starts at 1 to the right of the point).",
+  decToOct: "Integer: repeated ÷8 with remainders. Fraction: repeatedly ×8; each integer part becomes the next octal digit.",
+  octToDec: "Integer: sum d×8^n. Fraction: sum d×8^-n.",
+  decToHex: "Integer: repeated ÷16; map 10–15→A–F. Fraction: repeatedly ×16; each integer part (0–15) maps to 0–F.",
+  hexToDec: "Integer: sum d×16^n (A–F→10–15). Fraction: sum d×16^-n.",
+  binToOct: "Bridge: group integer bits in 3s from the point to the left (pad on left). Group fractional bits in 3s to the right (pad on right).",
+  octToBin: "Bridge: each octal digit → 3 binary bits. Keep the point in place.",
+  binToHex: "Bridge: group integer bits in 4s to the left; fractional in 4s to the right (pad on right).",
+  hexToBin: "Bridge: each hex digit → 4 binary bits. Keep the point in place.",
+  octToHex: "Bridge via binary: oct → bin (3 bits), then bin → hex (4 bits).",
+  hexToOct: "Bridge via binary: hex → bin (4 bits), then bin → oct (3 bits)."
 };
 
+/* ===== DOM HELPERS ===== */
 const el = (id)=>document.getElementById(id);
 const show = (id, txt)=>{ el(id).textContent = txt; el(id).classList.remove('muted'); };
-const clearOutputs = ()=>{
-  show("result","—"); show("steps","—"); show("rule","—");
-  el("error").style.display="none";
-};
+const clearOutputs = ()=>{ show("result","—"); show("steps","—"); show("rule","—"); el("error").style.display="none"; };
 
-// validators
+/* ===== VALIDATION (supports optional fractional part) ===== */
 const isValid = {
-  dec: s => /^\d+$/.test(s),
-  bin: s => /^[01]+$/.test(s),
-  oct: s => /^[0-7]+$/.test(s),
-  hex: s => /^[0-9a-fA-F]+$/.test(s),
+  dec: s => /^\d+(\.\d+)?$/.test(s),
+  bin: s => /^[01]+(\.[01]+)?$/.test(s),
+  oct: s => /^[0-7]+(\.[0-7]+)?$/.test(s),
+  hex: s => /^[0-9a-fA-F]+(\.[0-9a-fA-F]+)?$/.test(s),
 };
 const expected = {
   decToBin: "dec", decToOct: "dec", decToHex: "dec",
@@ -115,19 +118,191 @@ const expected = {
   hexToDec: "hex", hexToBin: "hex", hexToOct: "hex"
 };
 
-// helper to show spaced groups
+/* ===== STRING/PADDING UTILITIES ===== */
+function splitParts(s){
+  const [i,f=""] = s.split(".");
+  return { i, f, hasFrac: s.includes(".") && f.length>0 };
+}
 function groupLeft(str, size){
   if(!str) return "";
   const out = [];
   for(let i=0;i<str.length;i+=size){ out.push(str.slice(i,i+size)); }
   return out.join(" ");
 }
-function groupRight(str, size){
-  const padded = str.padStart(Math.ceil(str.length/size)*size,"0");
-  const out = [];
-  for(let i=0;i<padded.length;i+=size){ out.push(padded.slice(i,i+size)); }
-  return { padded, groups: out.join(" ") };
+function padLeftTo(str, size){
+  return str.padStart(Math.ceil(str.length/size)*size,"0");
 }
+function padRightTo(str, size){
+  if(!str) return "";
+  const len = Math.ceil(str.length/size)*size;
+  return str.padEnd(len,"0");
+}
+function trimFracZeros(out){
+  if(!out.includes(".")) return out;
+  out = out.replace(/\.?0+$/,"");
+  return out;
+}
+
+/* ===== DECIMAL <-> BASE b WITH FRACTIONS ===== */
+function decToBase(raw, base, alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"){
+  let steps = "";
+  const {i, f, hasFrac} = splitParts(raw);
+
+  steps += LINE("Integer part");
+  let n = BigInt(i||"0");
+  if(n===0n){ steps += "0 → 0\n"; }
+  let intOut = "";
+  while(n > 0n){
+    const q = n / BigInt(base), r = Number(n % BigInt(base));
+    const dig = alphabet[r];
+    steps += `${n} ÷ ${base} = ${q} remainder ${dig}\n`;
+    intOut = dig + intOut; n = q;
+  }
+  if(intOut==="") intOut="0";
+
+  let fracOut = "";
+  if(hasFrac){
+    steps += LINE("Fractional part");
+    let frac = Number("0."+f);
+    for(let k=1; k<=MAX_FRAC_DIGITS && frac>0; k++){
+      const x = frac * base;
+      const di = Math.floor(x);
+      const dig = alphabet[di];
+      fracOut += dig;
+      steps += `(${k}) ${frac} × ${base} = ${x} → digit ${dig}\n`;
+      frac = x - di;
+      if(frac < 1e-15) { frac = 0; } // kill FP noise
+    }
+    if(frac>0) steps += `… stopped after ${MAX_FRAC_DIGITS} fractional digits.\n`;
+  }
+
+  const result = trimFracZeros(fracOut ? `${intOut}.${fracOut}` : intOut);
+  return { result, steps };
+}
+
+function baseToDec(raw, base){
+  const {i, f, hasFrac} = splitParts(raw.toUpperCase());
+  const val = c => parseInt(c, base);
+  let steps = "";
+
+  steps += LINE("Integer part");
+  let intSum = 0;
+  i.split("").reverse().forEach((d, idx)=>{
+    const v = val(d)*(base**idx);
+    steps += `${d} × ${base}^${idx} = ${v}\n`;
+    intSum += v;
+  });
+
+  let fracSum = 0;
+  if(hasFrac){
+    steps += LINE("Fractional part");
+    f.split("").forEach((d, idx)=>{
+      const p = idx+1;
+      const v = val(d)*(base**(-p));
+      steps += `${d} × ${base}^-${p} = ${v}\n`;
+      fracSum += v;
+    });
+  }
+
+  const sum = intSum + fracSum;
+  steps += `\nSum = ${sum}`;
+  return { result: String(sum), steps };
+}
+
+/* ===== BINARY BRIDGES (WITH FRACTIONS) ===== */
+function octDigitToBin(d){ return parseInt(d,8).toString(2).padStart(3,"0"); }
+function hexDigitToBin(d){ return parseInt(d,16).toString(2).padStart(4,"0"); }
+
+function octToBinWithFrac(raw){
+  const {i,f,hasFrac} = splitParts(raw);
+  let steps = LINE("Integer part") + "Replace each octal digit with 3-bit binary:\n";
+  let intBin = i.split("").map(d=>{
+    const b = octDigitToBin(d); steps += `${d} → ${b}\n`; return b;
+  }).join("") || "000";
+
+  let fracBin = "";
+  if(hasFrac){
+    steps += LINE("Fractional part");
+    f.split("").forEach(d=>{
+      const b = octDigitToBin(d); steps += `${d} → ${b}\n`; fracBin += b;
+    });
+  }
+  steps += `\nInteger (3-bit groups): ${groupLeft(intBin,3)}`;
+  if(hasFrac) steps += `\nFraction (3-bit groups): ${groupLeft(fracBin,3)}`;
+  const result = fracBin ? `${intBin}.${fracBin}` : intBin;
+  return {bin: result, steps};
+}
+
+function hexToBinWithFrac(raw){
+  const {i,f,hasFrac} = splitParts(raw.toUpperCase());
+  let steps = LINE("Integer part") + "Replace each hex digit with 4-bit binary:\n";
+  let intBin = i.split("").map(d=>{
+    const b = hexDigitToBin(d); steps += `${d} → ${b}\n`; return b;
+  }).join("") || "0000";
+
+  let fracBin = "";
+  if(hasFrac){
+    steps += LINE("Fractional part");
+    f.split("").forEach(d=>{
+      const b = hexDigitToBin(d); steps += `${d} → ${b}\n`; fracBin += b;
+    });
+  }
+  steps += `\nInteger (4-bit groups): ${groupLeft(intBin,4)}`;
+  if(hasFrac) steps += `\nFraction (4-bit groups): ${groupLeft(fracBin,4)}`;
+  const result = fracBin ? `${intBin}.${fracBin}` : intBin;
+  return {bin: result, steps};
+}
+
+function binToOctWithFrac(raw){
+  const {i,f,hasFrac} = splitParts(raw);
+
+  const intPad = padLeftTo(i,3);
+  const fracPad = hasFrac ? padRightTo(f,3) : "";
+
+  let steps = LINE("Integer part");
+  steps += `Pad to multiple of 3: ${intPad}\nGroup (left): ${(intPad.match(/\d{3}/g)||[]).join(" ")}\n`;
+
+  if(hasFrac){
+    steps += LINE("Fractional part");
+    steps += `Pad to multiple of 3: ${fracPad}\nGroup (right): ${(fracPad.match(/\d{3}/g)||[]).join(" ")}\n`;
+  }
+
+  const intOct = (intPad.match(/\d{3}/g)||[]).map(c=>parseInt(c,2).toString(8)).join("") || "0";
+  const fracOct = hasFrac ? (fracPad.match(/\d{3}/g)||[]).map(c=>parseInt(c,2).toString(8)).join("") : "";
+  const out = fracOct ? `${intOct}.${fracOct}` : intOct;
+  return {result: trimFracZeros(out), steps};
+}
+
+function binToHexWithFrac(raw){
+  const {i,f,hasFrac} = splitParts(raw);
+
+  const intPad = padLeftTo(i,4);
+  const fracPad = hasFrac ? padRightTo(f,4) : "";
+
+  let steps = LINE("Integer part");
+  steps += `Pad to multiple of 4: ${intPad}\nGroup (left): ${(intPad.match(/\d{4}/g)||[]).join(" ")}\n`;
+
+  if(hasFrac){
+    steps += LINE("Fractional part");
+    steps += `Pad to multiple of 4: ${fracPad}\nGroup (right): ${(fracPad.match(/\d{4}/g)||[]).join(" ")}\n`;
+  }
+
+  const intHex = (intPad.match(/\d{4}/g)||[]).map(c=>parseInt(c,2).toString(16).toUpperCase()).join("") || "0";
+  const fracHex = hasFrac ? (fracPad.match(/\d{4}/g)||[]).map(c=>parseInt(c,2).toString(16).toUpperCase()).join("") : "";
+  const out = fracHex ? `${intHex}.${fracHex}` : intHex;
+  return {result: trimFracZeros(out), steps};
+}
+
+/* ===== CONVENIENCE WRAPPERS ===== */
+function decToBin(raw){ return decToBase(raw, 2); }
+function decToOct(raw){ return decToBase(raw, 8); }
+function decToHex(raw){ return decToBase(raw,16,"0123456789ABCDEF"); }
+function binToDec(raw){ return baseToDec(raw, 2); }
+function octToDec(raw){ return baseToDec(raw, 8); }
+function hexToDec(raw){ return baseToDec(raw,16); }
+
+/* ===== UI ===== */
+function showRule(type){ show("rule", rules[type]); }
 
 function convert(){
   clearOutputs();
@@ -140,7 +315,7 @@ function convert(){
     return;
   }
   if(!isValid[ expected[type] ](raw)){
-    el("error").textContent = "Input does not match the expected base for this conversion.";
+    el("error").textContent = "Input does not match the expected base for this conversion (supports an optional fractional part).";
     el("error").style.display="block";
     return;
   }
@@ -149,109 +324,93 @@ function convert(){
 
   switch(type){
     case "decToBin": {
-      let n = parseInt(raw,10);
-      if(n === 0){ steps = "0 → 0"; result="0"; break; }
-      while(n > 0){
-        const q = Math.floor(n/2), r = n%2;
-        steps += `${n} ÷ 2 = ${q} remainder ${r}\n`;
-        result = r + result; n = q;
+      const {result:r, steps:s} = decToBin(raw);
+      result = r; steps = s;
+      const {i,f,hasFrac} = splitParts(result);
+      const ig = padLeftTo(i,4).match(/\d{4}/g).join(" ");
+      steps += LINE("Grouping");
+      steps += `Grouped integer (4-bit): ${ig}`;
+      if(hasFrac){
+        const fg = padRightTo(f,4).match(/\d{4}/g).join(" ");
+        steps += `\nGrouped fraction (4-bit): ${fg}`;
       }
-      steps += `\nGrouped (4-bit): ${groupRight(result,4).groups}`;
       break;
     }
     case "binToDec": {
-      const arr = raw.split("").reverse(); let sum = 0;
-      arr.forEach((d,i)=>{ const v=(+d)*(2**i); steps += `${d} × 2^${i} = ${v}\n`; sum+=v; });
-      steps += `\nBinary (grouped 4-bit): ${groupRight(raw,4).groups}`;
-      steps += `\nSum = ${sum}`; result=String(sum); break;
+      const {result:r, steps:s} = binToDec(raw);
+      result = r; steps = s;
+      const {i,f,hasFrac} = splitParts(raw);
+      steps += LINE("Grouping");
+      steps += `Binary integer (4-bit): ${padLeftTo(i,4).match(/\d{4}/g).join(" ")}`;
+      if(hasFrac){
+        const fg = padRightTo(f,4).match(/\d{4}/g).join(" ");
+        steps += `\nBinary fraction (4-bit): ${fg}`;
+      }
+      break;
     }
     case "decToOct": {
-      let n = parseInt(raw,10);
-      if(n === 0){ steps = "0 → 0"; result="0"; break; }
-      while(n > 0){
-        const q = Math.floor(n/8), r = n%8;
-        steps += `${n} ÷ 8 = ${q} remainder ${r}\n`;
-        result = r + result; n = q;
-      }
-      steps += `\nBinary bridge idea: ${groupRight(parseInt(result,8).toString(2),3).groups}`;
+      const {result:r, steps:s} = decToOct(raw);
+      result = r; steps = s;
+      const bin = decToBin(raw).result;
+      const {i,f,hasFrac} = splitParts(bin);
+      steps += LINE("Binary bridge (3-bit)");
+      steps += `int: ${i ? padLeftTo(i,3).match(/\d{3}/g).join(" ") : ""}`;
+      if(hasFrac) steps += `\nfrac: ${padRightTo(f,3).match(/\d{3}/g).join(" ")}`;
       break;
     }
     case "octToDec": {
-      const arr = raw.split("").reverse(); let sum = 0;
-      arr.forEach((d,i)=>{ const v=parseInt(d,10)*(8**i); steps += `${d} × 8^${i} = ${v}\n`; sum+=v; });
-      steps += `\nOctal digits: ${raw.split("").join(" ")}`;
-      steps += `\nSum = ${sum}`; result=String(sum); break;
+      const {result:r, steps:s} = octToDec(raw);
+      result = r; steps = s;
+      break;
     }
     case "decToHex": {
-      let n = parseInt(raw,10);
-      if(n === 0){ steps = "0 → 0"; result="0"; break; }
-      while(n > 0){
-        const q = Math.floor(n/16), r = n%16;
-        const dig = r<10 ? String(r) : String.fromCharCode(55+r);
-        steps += `${n} ÷ 16 = ${q} remainder ${dig}\n`;
-        result = dig + result; n = q;
-      }
-      steps += `\nBinary bridge idea (4-bit): ${groupRight(parseInt(result,16).toString(2),4).groups}`;
+      const {result:r, steps:s} = decToHex(raw);
+      result = r; steps = s;
+      const bin = decToBin(raw).result;
+      const {i,f,hasFrac} = splitParts(bin);
+      steps += LINE("Binary bridge (4-bit)");
+      steps += `int: ${i ? padLeftTo(i,4).match(/\d{4}/g).join(" ") : ""}`;
+      if(hasFrac) steps += `\nfrac: ${padRightTo(f,4).match(/\d{4}/g).join(" ")}`;
       break;
     }
     case "hexToDec": {
-      const HEX = raw.toUpperCase();
-      const arr = HEX.split("").reverse(); let sum=0;
-      steps += `Hex digits: ${HEX.split("").join(" ")}\n`;
-      arr.forEach((d,i)=>{ const v=parseInt(d,16)*(16**i); steps += `${d} × 16^${i} = ${v}\n`; sum+=v; });
-      steps += `\nSum = ${sum}`; result=String(sum); break;
+      const {result:r, steps:s} = hexToDec(raw);
+      result = r; steps = s;
+      break;
     }
     case "binToOct": {
-      const {padded, groups} = groupRight(raw,3);
-      steps += `Pad to multiple of 3 bits: ${padded}\n`;
-      steps += `Group into 3-bit chunks: ${groups}\n`;
-      const chunks = padded.match(/\d{3}/g) || []; let out="";
-      chunks.forEach(c=>{ const d=parseInt(c,2).toString(8); steps += `${c} → ${d}\n`; out+=d; });
-      result = out || "0"; break;   // keep full octal; no trimming of leading 0 here
+      const {result:r, steps:s} = binToOctWithFrac(raw);
+      result = r; steps = s;
+      break;
     }
     case "octToBin": {
-      steps += `Replace each octal digit with 3-bit binary:\n`; let out="";
-      raw.split("").forEach(d=>{ const b=parseInt(d,8).toString(2).padStart(3,"0"); steps += `${d} → ${b}\n`; out+=b; });
-      steps += `\nGrouped (3-bit): ${groupLeft(out,3)}`;
-      result = out;                 // << keep FULL padded binary
+      const {bin, steps:s} = octToBinWithFrac(raw);
+      steps = s; result = bin;
       break;
     }
     case "binToHex": {
-      const {padded, groups} = groupRight(raw,4);
-      steps += `Pad to multiple of 4 bits: ${padded}\n`;
-      steps += `Group into 4-bit chunks: ${groups}\n`;
-      const chunks = padded.match(/\d{4}/g) || []; let out="";
-      chunks.forEach(c=>{ const d=parseInt(c,2).toString(16).toUpperCase(); steps += `${c} → ${d}\n`; out+=d; });
-      result = out || "0"; break;   // keep full hex (no trimming)
+      const {result:r, steps:s} = binToHexWithFrac(raw);
+      result = r; steps = s;
+      break;
     }
     case "hexToBin": {
-      steps += `Replace each hex digit with 4-bit binary:\n`; let out="";
-      raw.toUpperCase().split("").forEach(d=>{ const b=parseInt(d,16).toString(2).padStart(4,"0"); steps += `${d} → ${b}\n`; out+=b; });
-      steps += `\nGrouped (4-bit): ${groupLeft(out,4)}`;
-      result = out;                 // << keep FULL padded binary
+      const {bin, steps:s} = hexToBinWithFrac(raw);
+      steps = s; result = bin;
       break;
     }
     case "octToHex": {
-      steps += `Octal to binary (3 bits each):\n`; let bin="";
-      raw.split("").forEach(d=>{ const b=parseInt(d,8).toString(2).padStart(3,"0"); steps += `${d} → ${b}\n`; bin+=b; });
-      steps += `Grouped (3-bit): ${groupLeft(bin,3)}\n`;
-      const {padded, groups} = groupRight(bin,4);
-      steps += `Pad to multiple of 4 bits: ${padded}\n`;
-      steps += `Group into 4-bit chunks: ${groups}\n`;
-      const chunks = padded.match(/\d{4}/g) || []; let hex="";
-      chunks.forEach(c=>{ const h=parseInt(c,2).toString(16).toUpperCase(); steps += `${c} → ${h}\n`; hex+=h; });
-      result = hex || "0"; break;   // keep full hex
+      const b = octToBinWithFrac(raw);
+      const h = binToHexWithFrac(b.bin);
+      steps = b.steps + LINE("Binary → Hex") + h.steps;
+      result = h.result;
+      break;
     }
     case "hexToOct": {
-      steps += `Hex to binary (4 bits each):\n`; let bin="";
-      raw.toUpperCase().split("").forEach(d=>{ const b=parseInt(d,16).toString(2).padStart(4,"0"); steps += `${d} → ${b}\n`; bin+=b; });
-      steps += `Grouped (4-bit): ${groupLeft(bin,4)}\n`;
-      const {padded, groups} = groupRight(bin,3);
-      steps += `Pad to multiple of 3 bits: ${padded}\n`;
-      steps += `Group into 3-bit chunks: ${groups}\n`;
-      const chunks = padded.match(/\d{3}/g) || []; let oct="";
-      chunks.forEach(c=>{ const o=parseInt(c,2).toString(8); steps += `${c} → ${o}\n`; oct+=o; });
-      result = oct || "0"; break;   // keep full octal
+      const b = hexToBinWithFrac(raw);
+      const o = binToOctWithFrac(b.bin);
+      steps = b.steps + LINE("Binary → Octal") + o.steps;
+      result = o.result;
+      break;
     }
   }
 
@@ -266,4 +425,3 @@ document.addEventListener("DOMContentLoaded", ()=>{
 </script>
 </body>
 </html>
-
