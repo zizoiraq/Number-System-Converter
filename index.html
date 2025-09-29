@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Number System Converter (with Fractions + Section Lines)</title>
+<title>Number System Converter (with Exact Fraction Steps)</title>
 <style>
   :root{
     --bg:#f2f2f2; --card:#ffffff; --accent:#34a853;
@@ -35,7 +35,7 @@
 <body>
   <div class="card">
 
-    <!-- University-style header -->
+    <!-- Header -->
     <div class="header">
       <h2>Northern Technical University</h2>
       <h3>Technical Engineering College - Mosul </h3>
@@ -80,23 +80,23 @@
 
 <script>
 /* ===== CONFIG ===== */
-const MAX_FRAC_DIGITS = 20; // cap for fractional expansion
-const LINE = (label) => `\n──────── ${label} ────────\n`; // visual divider
+const MAX_FRAC_DIGITS = 20;
+const LINE = (label) => `\n──────── ${label} ────────\n`;
 
 /* ===== RULES TEXT ===== */
 const rules = {
-  decToBin: "Integer: repeated ÷2 with remainders. Fraction: repeatedly ×2; each integer part becomes the next bit after the point.",
-  binToDec: "Integer: sum d×2^n. Fraction: sum d×2^-n (n starts at 1 to the right of the point).",
-  decToOct: "Integer: repeated ÷8 with remainders. Fraction: repeatedly ×8; each integer part becomes the next octal digit.",
+  decToBin: "Integer: divide by 2 and collect remainders. Fraction: multiply by 2; take the integer part each time (carry).",
+  binToDec: "Integer: sum d×2^n. Fraction: sum d×2^-n.",
+  decToOct: "Integer: divide by 8 with remainders. Fraction: multiply by 8; take the integer part.",
   octToDec: "Integer: sum d×8^n. Fraction: sum d×8^-n.",
-  decToHex: "Integer: repeated ÷16; map 10–15→A–F. Fraction: repeatedly ×16; each integer part (0–15) maps to 0–F.",
-  hexToDec: "Integer: sum d×16^n (A–F→10–15). Fraction: sum d×16^-n.",
-  binToOct: "Bridge: group integer bits in 3s from the point to the left (pad on left). Group fractional bits in 3s to the right (pad on right).",
-  octToBin: "Bridge: each octal digit → 3 binary bits. Keep the point in place.",
-  binToHex: "Bridge: group integer bits in 4s to the left; fractional in 4s to the right (pad on right).",
-  hexToBin: "Bridge: each hex digit → 4 binary bits. Keep the point in place.",
-  octToHex: "Bridge via binary: oct → bin (3 bits), then bin → hex (4 bits).",
-  hexToOct: "Bridge via binary: hex → bin (4 bits), then bin → oct (3 bits)."
+  decToHex: "Integer: divide by 16 with remainders. Fraction: multiply by 16; take the integer part (0–F).",
+  hexToDec: "Integer: sum d×16^n. Fraction: sum d×16^-n.",
+  binToOct: "Bridge: group bits in 3s (pad).",
+  octToBin: "Bridge: each octal digit → 3 bits.",
+  binToHex: "Bridge: group bits in 4s (pad).",
+  hexToBin: "Bridge: each hex digit → 4 bits.",
+  octToHex: "Via binary: oct→bin→hex.",
+  hexToOct: "Via binary: hex→bin→oct."
 };
 
 /* ===== DOM HELPERS ===== */
@@ -104,7 +104,7 @@ const el = (id)=>document.getElementById(id);
 const show = (id, txt)=>{ el(id).textContent = txt; el(id).classList.remove('muted'); };
 const clearOutputs = ()=>{ show("result","—"); show("steps","—"); show("rule","—"); el("error").style.display="none"; };
 
-/* ===== VALIDATION (supports optional fractional part) ===== */
+/* ===== VALIDATION ===== */
 const isValid = {
   dec: s => /^\d+(\.\d+)?$/.test(s),
   bin: s => /^[01]+(\.[01]+)?$/.test(s),
@@ -143,11 +143,35 @@ function trimFracZeros(out){
   return out;
 }
 
-/* ===== DECIMAL <-> BASE b WITH FRACTIONS ===== */
+/* ===== EXACT DECIMAL STRING FOR BigInt RATIONALS ===== */
+/* Render p/q as a clean decimal string (no FP). places caps digits after decimal. */
+function rationalToDecimal(p, q, places=30){
+  // p, q are BigInt; q>0
+  let sign = "";
+  if (p < 0n) { sign = "-"; p = -p; }
+  const int = p / q;
+  let rem = p % q;
+
+  if (rem === 0n) return sign + int.toString();
+
+  let digits = "";
+  for (let i=0; i<places && rem>0n; i++){
+    rem *= 10n;
+    const d = rem / q;
+    rem = rem % q;
+    digits += d.toString();
+  }
+  // trim trailing zeros
+  digits = digits.replace(/0+$/,"");
+  return digits.length ? `${sign}${int.toString()}.${digits}` : sign + int.toString();
+}
+
+/* ===== DECIMAL <-> BASE b WITH FRACTIONS (exact carry method) ===== */
 function decToBase(raw, base, alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"){
   let steps = "";
   const {i, f, hasFrac} = splitParts(raw);
 
+  // Integer part via BigInt divisions
   steps += LINE("Integer part");
   let n = BigInt(i||"0");
   if(n===0n){ steps += "0 → 0\n"; }
@@ -160,20 +184,27 @@ function decToBase(raw, base, alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"){
   }
   if(intOut==="") intOut="0";
 
+  // Fractional part using multiply-and-carry with exact decimals in the log
   let fracOut = "";
   if(hasFrac){
     steps += LINE("Fractional part");
-    let frac = Number("0."+f);
-    for(let k=1; k<=MAX_FRAC_DIGITS && frac>0; k++){
-      const x = frac * base;
-      const di = Math.floor(x);
-      const dig = alphabet[di];
+    // 0.f  →  num/den with den = 10^len(f)
+    let num = BigInt(f);
+    const den = 10n ** BigInt(f.length);
+
+    for(let k=1; k<=MAX_FRAC_DIGITS && num>0n; k++){
+      const xNum = num * BigInt(base);  // (num/den) * base = xNum / den
+      const carry = xNum / den;         // integer part
+      const dig = alphabet[Number(carry)];
+      const prodDec = rationalToDecimal(xNum, den, 30);
+      const curDec  = rationalToDecimal(num, den, 30);
+
+      steps += `(${k}) ${curDec} × ${base} = ${prodDec} → digit ${dig}\n`;
+
       fracOut += dig;
-      steps += `(${k}) ${frac} × ${base} = ${x} → digit ${dig}\n`;
-      frac = x - di;
-      if(frac < 1e-15) { frac = 0; } // kill FP noise
+      num = xNum % den;                 // keep remainder for next step
     }
-    if(frac>0) steps += `… stopped after ${MAX_FRAC_DIGITS} fractional digits.\n`;
+    if(num>0n) steps += `… continue until desired digits or remainder becomes 0.\n`;
   }
 
   const result = trimFracZeros(fracOut ? `${intOut}.${fracOut}` : intOut);
@@ -209,7 +240,7 @@ function baseToDec(raw, base){
   return { result: String(sum), steps };
 }
 
-/* ===== BINARY BRIDGES (WITH FRACTIONS) ===== */
+/* ===== BRIDGES (support fractions) ===== */
 function octDigitToBin(d){ return parseInt(d,8).toString(2).padStart(3,"0"); }
 function hexDigitToBin(d){ return parseInt(d,16).toString(2).padStart(4,"0"); }
 
@@ -255,18 +286,14 @@ function hexToBinWithFrac(raw){
 
 function binToOctWithFrac(raw){
   const {i,f,hasFrac} = splitParts(raw);
-
   const intPad = padLeftTo(i,3);
   const fracPad = hasFrac ? padRightTo(f,3) : "";
-
   let steps = LINE("Integer part");
   steps += `Pad to multiple of 3: ${intPad}\nGroup (left): ${(intPad.match(/\d{3}/g)||[]).join(" ")}\n`;
-
   if(hasFrac){
     steps += LINE("Fractional part");
     steps += `Pad to multiple of 3: ${fracPad}\nGroup (right): ${(fracPad.match(/\d{3}/g)||[]).join(" ")}\n`;
   }
-
   const intOct = (intPad.match(/\d{3}/g)||[]).map(c=>parseInt(c,2).toString(8)).join("") || "0";
   const fracOct = hasFrac ? (fracPad.match(/\d{3}/g)||[]).map(c=>parseInt(c,2).toString(8)).join("") : "";
   const out = fracOct ? `${intOct}.${fracOct}` : intOct;
@@ -275,18 +302,14 @@ function binToOctWithFrac(raw){
 
 function binToHexWithFrac(raw){
   const {i,f,hasFrac} = splitParts(raw);
-
   const intPad = padLeftTo(i,4);
   const fracPad = hasFrac ? padRightTo(f,4) : "";
-
   let steps = LINE("Integer part");
   steps += `Pad to multiple of 4: ${intPad}\nGroup (left): ${(intPad.match(/\d{4}/g)||[]).join(" ")}\n`;
-
   if(hasFrac){
     steps += LINE("Fractional part");
     steps += `Pad to multiple of 4: ${fracPad}\nGroup (right): ${(fracPad.match(/\d{4}/g)||[]).join(" ")}\n`;
   }
-
   const intHex = (intPad.match(/\d{4}/g)||[]).map(c=>parseInt(c,2).toString(16).toUpperCase()).join("") || "0";
   const fracHex = hasFrac ? (fracPad.match(/\d{4}/g)||[]).map(c=>parseInt(c,2).toString(16).toUpperCase()).join("") : "";
   const out = fracHex ? `${intHex}.${fracHex}` : intHex;
@@ -302,8 +325,6 @@ function octToDec(raw){ return baseToDec(raw, 8); }
 function hexToDec(raw){ return baseToDec(raw,16); }
 
 /* ===== UI ===== */
-function showRule(type){ show("rule", rules[type]); }
-
 function convert(){
   clearOutputs();
   const type = el("conversion").value;
